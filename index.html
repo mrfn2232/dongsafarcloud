@@ -188,7 +188,6 @@
         }
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700&display=swap" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
@@ -196,6 +195,7 @@
     <button id="fixedBackBtn" class="fixed-back-btn" onclick="showMainPage()">بازگشت به ورودی‌ها</button>
     <h2>محاسبه دنگ سفر - محمدرضا</h2>
     <div class="container">
+        <!-- صفحه اصلی (ورودی‌ها) -->
         <div id="mainPage" class="active">
             <div class="period-selector">
                 <h3>مدیریت دوره‌ها</h3>
@@ -286,12 +286,12 @@
             <div class="summary" id="summary">
                 <button onclick="showReportPage()" class="report-btn">مشاهده گزارش‌ها</button>
                 <button onclick="generateExcelReport()" class="report-btn" style="margin-left:10px;">تهیه گزارش اکسل</button>
-                <button onclick="generatePDFReport()" class="report-btn" style="margin-left:10px;">تهیه گزارش PDF</button>
                 <button onclick="endPeriod()" class="end-period-btn" style="margin-left:10px;">اتمام دوره</button>
                 <button onclick="resetPeriod()" class="delete-btn" style="margin-left:10px;">ریست دوره فعلی</button>
             </div>
         </div>
 
+        <!-- صفحه گزارش‌ها -->
         <div id="reportPage">
             <table id="expenseTable">
                 <thead>
@@ -314,43 +314,50 @@
     </div>
 
     <script>
-        // تنظیمات Google Sheets
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrpq541FdxtZ5BJodJXjGtLBUcxjZHvMCK2KEcQxjmQ2iwV0i9oUbHuHylpCRb2eE/exec'; // بعد از قدم ۲ پر می‌شه
+        const API_KEY = '$2a$10$CRhinAZUCBLtBBZalvCmnu2nZ4hSHB.4CzPqZ1fAskVWZKMWRh9/G';
+        const BIN_ID = '6810ad778a456b796693c5a9';
+        const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
         let periods = {};
         let currentPeriod = null;
 
-        async function savePeriods() {
-            if (!currentPeriod) return;
+        async function fetchPeriods() {
             try {
-                await fetch(SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'save', period: currentPeriod, data: periods[currentPeriod] }),
-                    headers: { 'Content-Type': 'application/json' }
+                const response = await fetch(API_URL, {
+                    headers: {
+                        'X-Master-Key': API_KEY
+                    }
                 });
-                renderPeriodSelect();
-            } catch (error) {
-                console.error('خطا در ذخیره دوره:', error);
-                alert('خطا در ذخیره داده‌ها. لطفاً اینترنت را چک کنید.');
-            }
-        }
-
-        async function loadPeriods() {
-            try {
-                periods = {};
-                const response = await fetch(`${SCRIPT_URL}?action=load`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch data from jsonbin.io');
+                }
                 const data = await response.json();
-                Object.keys(data).forEach(period => {
-                    periods[period] = data[period];
-                });
+                periods = data.record || {};
                 renderPeriodSelect();
             } catch (error) {
-                console.error('خطا در لود دوره‌ها:', error);
-                alert('خطا در لود داده‌ها. لطفاً اینترنت را چک کنید.');
+                console.error('Error fetching periods:', error);
+                alert('خطا در بارگذاری داده‌ها از سرور. لطفاً دوباره تلاش کنید.');
+                periods = {};
             }
         }
 
-        function safeAccess(obj, key, defaultValue = 0) {
-            return obj && obj[key] !== undefined ? obj[key] : defaultValue;
+        async function savePeriods() {
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Master-Key': API_KEY
+                    },
+                    body: JSON.stringify(periods)
+                });
+                if (!response.ok) {
+                    throw new Error('Failed to save data to jsonbin.io');
+                }
+                renderPeriodSelect();
+            } catch (error) {
+                console.error('Error saving periods:', error);
+                alert('خطا در ذخیره داده‌ها در سرور. لطفاً دوباره تلاش کنید.');
+            }
         }
 
         function updateFixedPeriod() {
@@ -811,7 +818,7 @@
                 return;
             }
             if (typeof XLSX === 'undefined') {
-                alert('کتابخانه SheetJS بارگذاری نشده است. لطفاً اتصال اینترنت را بررسی کنید.');
+                alert('کتابخانه SheetJS بارگذاری نشده است. لطفاً اتصال اینترنت را بررسی کنید یا فایل xlsx.full.min.js را به‌صورت محلی اضافه کنید.');
                 return;
             }
 
@@ -947,100 +954,8 @@
                 XLSX.writeFile(wb, `گزارش_${currentPeriod}.xlsx`);
             } catch (error) {
                 console.error('خطا در تولید فایل اکسل:', error);
-                alert('خطایی در تولید فایل اکسل رخ داد. لطفاً دوباره امتحان کنید.');
+                alert('خطایی در تولید فایل اکسل رخ داد. لطفاً دوباره امتحان کنید یا کنسول مرورگر را بررسی کنید.');
             }
-        }
-
-        function generatePDFReport() {
-            if (!currentPeriod || !periods[currentPeriod]) {
-                alert('ابتدا یک دوره انتخاب کنید');
-                return;
-            }
-            if (!periods[currentPeriod].expenses || !periods[currentPeriod].expenses.length) {
-                alert('هیچ هزینه‌ای برای این دوره ثبت نشده است');
-                return;
-            }
-
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            doc.setFont('Vazirmatn', 'normal');
-            doc.setFontSize(12);
-            doc.text(`گزارش دنگ سفر: ${currentPeriod}`, 10, 10);
-
-            let y = 20;
-            doc.text('هزینه‌ها:', 10, y);
-            y += 10;
-            periods[currentPeriod].expenses.forEach((exp, index) => {
-                doc.text(`${index + 1}. ${exp.person} - ${exp.subject}: ${exp.amount.toLocaleString()} تومان`, 10, y);
-                y += 10;
-                Object.keys(exp.shares).forEach(person => {
-                    doc.text(`   ${person}: ${exp.shares[person].toLocaleString()} تومان`, 10, y);
-                    y += 10;
-                });
-            });
-
-            if (periods[currentPeriod].trusts && periods[currentPeriod].trusts.length > 0) {
-                doc.text('تنخواه‌ها:', 10, y);
-                y += 10;
-                periods[currentPeriod].trusts.forEach((trust, index) => {
-                    doc.text(`${index + 1}. ${trust.payer} به ${trust.receiver}: ${trust.amount.toLocaleString()} تومان`, 10, y);
-                    y += 10;
-                });
-            }
-
-            let totalShares = {};
-            let totalSpent = 0;
-            periods[currentPeriod].people.forEach(person => {
-                totalShares[person.name] = {
-                    total: 0,
-                    paid: 0,
-                    trustsPaid: 0,
-                    trustsReceived: 0,
-                    isGroup: person.isGroup,
-                    count: person.groupCount
-                };
-            });
-            periods[currentPeriod].expenses.forEach(exp => {
-                totalSpent += exp.amount;
-                totalShares[exp.person].paid += exp.amount;
-                Object.keys(exp.shares).forEach(person => {
-                    totalShares[person].total += exp.shares[person];
-                });
-            });
-            if (periods[currentPeriod].trusts) {
-                periods[currentPeriod].trusts.forEach(trust => {
-                    totalShares[trust.payer].trustsPaid += trust.amount;
-                    totalShares[trust.receiver].trustsReceived += trust.amount;
-                });
-            }
-
-            y += 10;
-            doc.text('گزارش نهایی:', 10, y);
-            y += 10;
-            doc.text(`مجموع کل هزینه‌ها: ${totalSpent.toLocaleString()} تومان`, 10, y);
-            y += 10;
-            Object.keys(totalShares).forEach(personName => {
-                const person = totalShares[personName];
-                const totalPaid = person.paid + person.trustsPaid - person.trustsReceived;
-                const difference = totalPaid - person.total;
-                const status = difference > 0 ? 'طلبکار' : difference < 0 ? 'بدهکار' : 'تسویه';
-                doc.text(`${personName} ${person.isGroup ? `(${person.count} نفر)` : ''}:`, 10, y);
-                y += 10;
-                doc.text(`   پرداخت‌شده: ${person.paid.toLocaleString()} تومان`, 10, y);
-                y += 10;
-                doc.text(`   تنخواه پرداخت‌شده: ${person.trustsPaid.toLocaleString()} تومان`, 10, y);
-                y += 10;
-                doc.text(`   تنخواه دریافت‌شده: ${person.trustsReceived.toLocaleString()} تومان`, 10, y);
-                y += 10;
-                doc.text(`   جمع پرداخت‌ها: ${totalPaid.toLocaleString()} تومان`, 10, y);
-                y += 10;
-                doc.text(`   سهم: ${person.total.toLocaleString()} تومان`, 10, y);
-                y += 10;
-                doc.text(`   تفاضل: ${difference.toLocaleString()} تومان (${status})`, 10, y);
-                y += 10;
-            });
-
-            doc.save(`گزارش_${currentPeriod}.pdf`);
         }
 
         function showTotalShares() {
@@ -1052,10 +967,10 @@
                 alert('هیچ هزینه‌ای برای این دوره ثبت نشده است');
                 return;
             }
-
+            
             let totalShares = {};
             let totalSpent = 0;
-
+            
             periods[currentPeriod].people.forEach(person => {
                 totalShares[person.name] = {
                     total: 0,
@@ -1119,15 +1034,11 @@
             }
             if (confirm('آیا مطمئن هستید که می‌خواهید این دوره را ریست کنید بدون تولید گزارش؟')) {
                 delete periods[currentPeriod];
-                await fetch(SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'delete', period: currentPeriod }),
-                    headers: { 'Content-Type': 'application/json' }
-                });
                 currentPeriod = null;
-                await loadPeriods();
+                await savePeriods();
                 resetUI();
                 showMainPage();
+                renderPeriodSelect();
             }
         }
 
@@ -1140,21 +1051,17 @@
                 generateExcelReport();
                 if (confirm('آیا مطمئن هستید که می‌خواهید این دوره را ریست کنید؟')) {
                     delete periods[currentPeriod];
-                    await fetch(SCRIPT_URL, {
-                        method: 'POST',
-                        body: JSON.stringify({ action: 'delete', period: currentPeriod }),
-                        headers: { 'Content-Type': 'application/json' }
-                    });
                     currentPeriod = null;
-                    await loadPeriods();
+                    await savePeriods();
                     resetUI();
                     showMainPage();
+                    renderPeriodSelect();
                 }
             }
         }
 
         window.onload = async () => {
-            await loadPeriods();
+            await fetchPeriods();
             currentPeriod = null;
             resetUI();
             updateFixedPeriod();
